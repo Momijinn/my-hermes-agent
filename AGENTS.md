@@ -14,7 +14,7 @@
   ```
 
 - Normal startup is `docker compose up -d --build hermes gateway cloudflared`; inspect with `docker compose ps` and `docker compose logs -f gateway cloudflared` (or `docker compose logs -f hermes`). Compose waits for Hermes health before Gateway, then Gateway health before `cloudflared`.
-- Check local and tunneled health with `curl -fsS http://127.0.0.1:9119/health` and `curl -fsS https://<configured-hostname>/health`.
+- Check local, LAN, and tunneled health with `curl -fsS http://127.0.0.1:9119/health`, `curl -fsS http://<docker-host-lan-ip>:9119/health`, and `curl -fsS https://<configured-hostname>/health`.
 - Stop with `docker compose down`. Never use `docker compose down -v` or `rm -rf ~/.hermes`: the host-mounted `~/.hermes` contains shared persistent state, memory, credentials, and logs.
 
 ## Architecture
@@ -22,8 +22,8 @@
 - `hermes/Dockerfile` pins `nousresearch/hermes-agent:v2026.6.5`, adds Node/npm, and seeds `hermes/config/config.yaml`. Compose copies that config into the persistent `/opt/data` volume before running `hermes gateway run`.
 - Hermes is internal-only on `internal-net`; its API listens on container port 9119 and is not published to the host. Local model traffic uses `http://host.docker.internal:11234/v1`; the configured fallback is OpenRouter `openai/gpt-5.6-luna`.
 - `gateway/main.py` is the FastAPI entrypoint, run by the gateway image as `uvicorn main:app --host 0.0.0.0 --port 9119`. It authenticates `Bearer` tokens, enforces context limits, and forwards `POST /v1/chat/completions` to Hermes without rewriting the payload. `GET /health` is unauthenticated.
-- `cloudflared` uses the Dashboard-managed, token-authenticated Cloudflare Tunnel to reach `http://gateway:9119`; the Gateway is the only external API boundary. Streaming requests (`stream=true`) are intentionally rejected with HTTP 400.
-- The dashboard runs inside Hermes with `HERMES_DASHBOARD_INSECURE=1` and is intentionally unauthenticated. The container process may listen on `0.0.0.0:8642`, but Compose must map it only as `127.0.0.1:8642:8642`; never expose it through Cloudflare or another proxy.
+- `cloudflared` uses the Dashboard-managed, token-authenticated Cloudflare Tunnel to reach `http://gateway:9119`; Gateway port 9119 is also explicitly published for trusted host/LAN access and requires Gateway authentication. Streaming requests (`stream=true`) are intentionally rejected with HTTP 400.
+- The dashboard runs inside Hermes with `HERMES_DASHBOARD_INSECURE=1` and is intentionally unauthenticated. The user explicitly approved direct host/LAN access, so Compose maps it as `8642:8642`; use only on a trusted network and never expose it through Cloudflare or another proxy.
 - Only assign required hostnames/routes to the Cloudflare Tunnel, review Gateway and Cloudflare logs, and before internet exposure use strong tokens and consider Cloudflare Access, IP restrictions, and rate limits.
 
 ## Testing and CI

@@ -33,7 +33,8 @@ services:
       # Persist Hermes state, memories, credentials, and logs on the host.
       - "${HOME}/.hermes:/opt/data"
     ports:
-      - "127.0.0.1:8642:8642"
+      # Explicitly approved direct host/LAN access; the dashboard has no auth.
+      - "8642:8642"
     networks:
       - internal-net
     healthcheck:
@@ -50,8 +51,8 @@ services:
   gateway:
     build: ./gateway
     ports:
-      # Keep local diagnostics available without making the gateway public directly.
-      - "127.0.0.1:9119:9119"
+      # Explicitly approved direct host/LAN access; clients must provide a Gateway token.
+      - "9119:9119"
     environment:
       - GATEWAY_TOKENS=${GATEWAY_TOKENS}
       - HERMES_URL=http://hermes:9119
@@ -97,6 +98,4 @@ networks:
   public-net:
     internal: false
   internal-net:
-    # A published localhost port cannot be reached through an internal-only
-    # bridge. Hermes API 9119 remains unpublished; only Dashboard 8642 is
-    # explicitly forwarded above.
+    # Hermes API 9119 remains unpublished; Gateway reaches it over this network.

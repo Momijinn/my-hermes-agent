@@ -45,11 +45,11 @@ docker compose ps
 
 ## ローカルDashboard
 
-Dashboardは公式の `HERMES_DASHBOARD=1` で既存の `hermes` コンテナ内に有効化します。別Dashboardコンテナ、別profile、別volumeは使用しません。ローカル専用のため `HERMES_DASHBOARD_INSECURE=1` を設定し、認証なしで起動します。`0.0.0.0:8642` はコンテナ内だけでlistenし、ホストでは必ず `127.0.0.1:8642` に限定公開します。
+Dashboardは公式の `HERMES_DASHBOARD=1` で既存の `hermes` コンテナ内に有効化します。別Dashboardコンテナ、別profile、別volumeは使用しません。ユーザー承認済みの直接アクセス用に `HERMES_DASHBOARD_INSECURE=1` を設定し、認証なしでホストの `8642` 番ポートへ公開します。
 
 この構成ではDashboardのBasic Auth 3項目は不要です。Composeが設定するため、`.env` に認証情報を追加しないでください。
 
-`HERMES_DASHBOARD_INSECURE=1` は、localhostへ到達できるすべてのローカルプロセスからDashboardが無認証で見える危険な設定です。ホスト公開を `127.0.0.1:8642:8642` 以外へ変更したり、DashboardをCloudflare Tunnelや別のリバースプロキシで外部公開したりしないでください。
+`HERMES_DASHBOARD_INSECURE=1` と `8642:8642` は、ホストやネットワークからDashboardが無認証で見える危険な設定です。信頼できるネットワークでのみ使用し、DashboardをCloudflare Tunnelや別のリバースプロキシで外部公開しないでください。
 
 ```sh
 docker compose up -d --build hermes gateway cloudflared
@@ -78,14 +78,14 @@ Hermes Agent は通常 `~/.hermes/config.yaml` を読み込みます。この構
 
 `hermes/config/config.yaml` の `base_url` は Docker コンテナから macOS ホスト上のローカル LLM に接続するため `http://host.docker.internal:11234/v1` としています。Hermes が `/chat/completions` を付加するため、実際のリクエスト先は `http://host.docker.internal:11234/v1/chat/completions` です。
 
-Hermes の OpenAI 互換 API はコンテナ内の 9119 番ポートで起動し、`internal-net` 上の Gateway から `http://hermes:9119` で到達できます。Hermes の 9119 番ポートはホストへ公開しません。Gateway は Cloudflare Tunnel の入口であり、ローカル疎通確認用にホストの `127.0.0.1:9119` へだけ公開します。
+Hermes の OpenAI 互換 API はコンテナ内の 9119 番ポートで起動し、`internal-net` 上の Gateway から `http://hermes:9119` で到達できます。Hermes の 9119 番ポートはホストへ公開しません。Gateway は `9119:9119` でホストとLANへ公開され、Cloudflare Tunnelからも到達できます。直接アクセスにはGatewayトークンが必要です。
 
 ## 注意点
 
 - コンテナ内の `localhost` はコンテナ自身を指します。ローカル LLM が macOS ホスト上で動作している場合、Docker から到達できるホスト名に合わせて `base_url` を変更してください。Docker Desktop では通常 `host.docker.internal` が利用できます。
 - OpenRouter のフォールバックモデルは `openai/gpt-5.6-luna` に設定しています。必要に応じて `fallback_providers[].model` を変更してください。
-- Dashboardは同一Hermesコンテナ内で `HERMES_DASHBOARD_INSECURE=1` を使うローカル専用構成です。無認証であるため、ホスト公開を `127.0.0.1:8642:8642` から変更しないでください。
-- `HERMES_DASHBOARD_PUBLIC_URL`はローカルURLの`http://localhost:8642`に固定しています。DashboardはCloudflare Tunnelで外部公開しません。
+- Dashboardは同一Hermesコンテナ内で `HERMES_DASHBOARD_INSECURE=1` を使う無認証構成です。ユーザー承認済みのためホストの `8642:8642` に公開しますが、信頼できるネットワークに限定してください。
+- `HERMES_DASHBOARD_PUBLIC_URL`はローカルURLの`http://localhost:8642`に固定しています。DashboardはCloudflare Tunnelで外部公開しません。Gatewayは認証付きでLANからも到達できます。
 
 ## GitHub Actions 連携（外部公開用）
 
@@ -96,7 +96,7 @@ GitHub Actions -> Cloudflare Tunnel (HTTPS) -> FastAPI Gateway -> Hermes Agent
                                              public-net       internal-net
 ```
 
-FastAPI Gateway は `Authorization: Bearer` トークンとリクエストの形式を検証し、受信したOpenAI Chat Completions JSONを、主要フィールドと追加フィールドを保持したまま Docker 内部ネットワーク上の Hermes (`http://hermes:9119/v1/chat/completions`) へ転送します。Gatewayはレビュー用のcontextやsystem messageを生成しません。Hermes の 9119 番ポートはホストへ公開されません。
+FastAPI Gateway は `Authorization: Bearer` トークンとリクエストの形式を検証し、受信したOpenAI Chat Completions JSONを、主要フィールドと追加フィールドを保持したまま Docker 内部ネットワーク上の Hermes (`http://hermes:9119/v1/chat/completions`) へ転送します。Gatewayはレビュー用のcontextやsystem messageを生成しません。Hermes の 9119 番ポートはホストへ公開されませんが、Gatewayの9119番ポートはホストとLANへ公開されます。
 
 ### Chat Completions API
 
@@ -154,13 +154,15 @@ Gateway のヘルスチェックは Tunnel の URL で確認できます。
 
 ```sh
 curl -fsS http://127.0.0.1:9119/health
+# LAN上の別PCからは、DockerホストのLANアドレスを指定する
+curl -fsS http://<docker-host-lan-ip>:9119/health
 # Cloudflare Dashboardで設定した環境固有のURLでも確認する
 curl -fsS https://<your-configured-hostname>/health
 ```
 
 ### セキュリティ上の注意
 
-- Hermes の 9119 番ポートを `ports` でホストへ公開しないでください。Gateway と Hermes は `internal-net` でのみ通信します。
+- Hermes の 9119 番ポートは `ports` でホストへ公開しないでください。Gatewayの9119番ポートはLANへ公開されるため、Gatewayトークンを必ず設定し、信頼できるネットワークに限定してください。Gateway と Hermes は `internal-net` でも通信します。
 - Gateway トークン、Cloudflare 認証情報、GitHub Secrets はログ、PR、Git リポジトリへ出力しないでください。
 - Cloudflare 側では必要なホスト名だけを Tunnel に割り当て、不要な公開ルートを作らないでください。
 - `GATEWAY_MAX_CONTEXT_LINES` と `GATEWAY_MAX_CONTEXT_CHARS` で入力サイズを制限し、Gateway と Cloudflare のログを定期的に確認してください。
