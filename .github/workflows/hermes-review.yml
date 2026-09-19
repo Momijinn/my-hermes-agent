@@ -1,0 +1,182 @@
+name: Hermes Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install validation dependencies
+        run: python -m pip install --disable-pip-version-check --requirement gateway/requirements-dev.txt
+
+      - name: Validate Python and YAML
+        run: |
+          python -m py_compile gateway/main.py gateway/test_main.py
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          paths = [
+              path for pattern in ("*.yml", "*.yaml")
+              for path in Path(".").rglob(pattern)
+              if ".git" not in path.parts
+          ]
+          for path in sorted(paths):
+              with path.open(encoding="utf-8") as handle:
+                  yaml.safe_load(handle)
+              print(f"Validated YAML: {path}")
+          PY
+
+      - name: Validate Gateway tests
+        run: python -m pytest gateway/test_main.py -q
+
+      - name: Validate Compose configuration
+        run: |
+          trap 'rm -f .env' EXIT
+          printf '%s\n' \
+            'HERMES_API_KEY=ci-hermes-api-key' \
+            'GATEWAY_TOKENS=ci-gateway-token' \
+            'CLOUDFLARE_TUNNEL_TOKEN=ci-cloudflare-token' > .env
+          docker compose config --quiet
+
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build review context
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          git diff "origin/$BASE_REF...origin/$HEAD_REF" \
+            > pr.diff 2>/dev/null || true
+
+          if [ ! -s pr.diff ]; then
+            git diff "origin/$BASE_REF...HEAD" \
+              > pr.diff 2>/dev/null || true
+          fi
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          diff = Path("pr.diff").read_text(encoding="utf-8", errors="replace")
+          context = "\n\n".join([
+              f"PR #{os.environ['PR_NUMBER']} の差分をレビューしてください。",
+              f"リポジトリ: {os.environ['REPOSITORY']}",
+              f"Base: {os.environ['BASE_REF']}",
+              f"Head: {os.environ['HEAD_REF']}",
+              f"```diff\n{diff}\n```",
+          ])
+          request = {
+              "model": "",
+              "messages": [
+                  {
+                      "role": "system",
+                      "content": "You are a senior code reviewer. Review this pull request and provide constructive feedback in Japanese. Focus on bugs, security issues, performance, and code quality. Structure your review with clear sections: 1) 全体の評価, 2) 気になる点 (バグ・セキュリティ・パフォーマンス), 3) 改善提案, 4) 総評。具体的で実用的なフィードバックを提供してください.",
+                  },
+                  {"role": "user", "content": context},
+              ],
+              "temperature": 0.3,
+              "max_tokens": 4096,
+              "stream": False,
+          }
+          Path("review-request.json").write_text(json.dumps(request), encoding="utf-8")
+          print(f"Context size: {len(context.splitlines())} lines")
+          PY
+
+      - name: Send to Hermes Gateway
+        id: hermes
+        env:
+          GATEWAY_URL: ${{ secrets.HERMES_GATEWAY_URL }}
+          GATEWAY_TOKEN: ${{ secrets.HERMES_GATEWAY_TOKEN }}
+          RESPONSE_FILE: ${{ runner.temp }}/hermes-gateway-response.json
+          REVIEW_FILE: ${{ runner.temp }}/hermes-review.md
+        run: |
+          if [ -z "$GATEWAY_URL" ] || [ -z "$GATEWAY_TOKEN" ]; then
+            echo "Skipping: HERMES_GATEWAY_URL or HERMES_GATEWAY_TOKEN not set"
+            exit 0
+          fi
+
+          if ! HTTP_CODE=$(curl --silent --show-error \
+              --connect-timeout 10 --max-time 180 \
+              --output "$RESPONSE_FILE" --write-out '%{http_code}' \
+              -X POST "$GATEWAY_URL/v1/chat/completions" \
+              -H "Authorization: Bearer $GATEWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              --data-binary @review-request.json); then
+            echo "Gateway request failed; skipping optional review"
+            exit 0
+          fi
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Gateway returned HTTP $HTTP_CODE"
+            exit 0
+          fi
+
+          if python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          try:
+              data = json.loads(Path(os.environ["RESPONSE_FILE"]).read_text(encoding="utf-8"))
+              review = data["choices"][0]["message"]["content"]
+              if not isinstance(review, str) or not review.strip():
+                  raise ValueError("review content is empty")
+          except (OSError, ValueError, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+              print(f"Invalid Gateway JSON response: {exc}")
+              raise SystemExit(1)
+
+          Path(os.environ["REVIEW_FILE"]).write_text(review, encoding="utf-8")
+          PY
+          then
+            echo "review_available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "review_available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post Review Comment
+        if: steps.hermes.outputs.review_available == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REVIEW_FILE: ${{ runner.temp }}/hermes-review.md
+          BODY_FILE: ${{ runner.temp }}/hermes-review-comment.md
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          review = Path(os.environ["REVIEW_FILE"]).read_text(encoding="utf-8")
+          Path(os.environ["BODY_FILE"]).write_text(
+              "## Hermes Code Review\n\n"
+              + review
+              + "\n\n---\n*Reviewed by Hermes Agent via GitHub Actions*\n",
+              encoding="utf-8",
+          )
+          PY
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --body-file "$BODY_FILE" || echo "Failed to post comment"

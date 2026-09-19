@@ -1,0 +1,61 @@
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+
+# Docker and local container artifacts
+*.log
+.docker/
+docker-data/
+docker-volumes/
+docker-compose.override.yml
+
+# Cloudflare Tunnel credentials
+cloudflared/credentials.json
+
+# Hermes local data (normally stored at ~/.hermes on the host)
+.hermes/
+hermes-data/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Operating system files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+ehthumbs.db
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.pid
+tmp/
+temp/
+.playwright-mcp
