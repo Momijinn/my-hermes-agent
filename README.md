@@ -45,11 +45,11 @@ docker compose ps
 
 ## ローカルDashboard
 
-Dashboardは公式の `HERMES_DASHBOARD=1` で既存の `hermes` コンテナ内に有効化します。別Dashboardコンテナ、別profile、別volumeは使用しません。ローカル専用のため `HERMES_DASHBOARD_INSECURE=1` を設定し、認証なしで起動します。`0.0.0.0:8642` はコンテナ内だけでlistenし、ホストでは必ず `127.0.0.1:8642` に限定公開します。
+Dashboardは公式の `HERMES_DASHBOARD=1` で既存の `hermes` コンテナ内に有効化します。別Dashboardコンテナ、別profile、別volumeは使用しません。ユーザー承認済みの直接アクセス用に `HERMES_DASHBOARD_INSECURE=1` を設定し、認証なしでホストの `8642` 番ポートへ公開します。
 
 この構成ではDashboardのBasic Auth 3項目は不要です。Composeが設定するため、`.env` に認証情報を追加しないでください。
 
-`HERMES_DASHBOARD_INSECURE=1` は、localhostへ到達できるすべてのローカルプロセスからDashboardが無認証で見える危険な設定です。ホスト公開を `127.0.0.1:8642:8642` 以外へ変更したり、DashboardをCloudflare Tunnelや別のリバースプロキシで外部公開したりしないでください。
+`HERMES_DASHBOARD_INSECURE=1` と `8642:8642` は、ホストやネットワークからDashboardが無認証で見える危険な設定です。信頼できるネットワークでのみ使用し、DashboardをCloudflare Tunnelや別のリバースプロキシで外部公開しないでください。
 
 ```sh
 docker compose up -d --build hermes gateway cloudflared
@@ -84,7 +84,7 @@ Hermes の OpenAI 互換 API はコンテナ内の 9119 番ポートで起動し
 
 - コンテナ内の `localhost` はコンテナ自身を指します。ローカル LLM が macOS ホスト上で動作している場合、Docker から到達できるホスト名に合わせて `base_url` を変更してください。Docker Desktop では通常 `host.docker.internal` が利用できます。
 - OpenRouter のフォールバックモデルは `openai/gpt-5.6-luna` に設定しています。必要に応じて `fallback_providers[].model` を変更してください。
-- Dashboardは同一Hermesコンテナ内で `HERMES_DASHBOARD_INSECURE=1` を使うローカル専用構成です。無認証であるため、ホスト公開を `127.0.0.1:8642:8642` から変更しないでください。
+- Dashboardは同一Hermesコンテナ内で `HERMES_DASHBOARD_INSECURE=1` を使う無認証構成です。ユーザー承認済みのためホストの `8642:8642` に公開しますが、信頼できるネットワークに限定してください。
 - `HERMES_DASHBOARD_PUBLIC_URL`はローカルURLの`http://localhost:8642`に固定しています。DashboardはCloudflare Tunnelで外部公開しません。
 
 ## GitHub Actions 連携（外部公開用）
