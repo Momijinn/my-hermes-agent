@@ -1,12 +1,12 @@
 # Hermes Agent AI Assistant
 
-Hermes Agent v2026.6.5 を Docker Compose で起動するための最小構成です。通常はローカル LLM を使用し、ローカルモデルが利用できない場合だけ OpenRouter にフォールバックします。
+Hermes Agent v2026.6.5 を Docker Compose で起動するための最小構成です。OpenRouter の `deepseek/deepseek-v4-flash-0731` をデフォルトモデルとして使用し、利用できない場合は `openai/gpt-5.6-luna` にフォールバックします。
 
 ## 構成
 
 - `hermes/Dockerfile`: `nousresearch/hermes-agent:2026.6.5` を固定して Node.js/npm を追加
 - `docker-compose.yml`: Hermes OpenAI互換APIとDashboardを同じHermesコンテナで有効化し、Gateway、Cloudflare Tunnel、永続データ、環境変数を設定
-- `hermes/config/config.yaml`: ローカルモデルと OpenRouter フォールバックの初期設定テンプレート
+- `hermes/config/config.yaml`: OpenRouterのデフォルトモデルとフォールバック、およびコメントアウトしたローカルモデル設定の初期テンプレート
 - `gateway/Dockerfile`: Python 3.12 slim-bookworm を digest 固定して Gateway をビルド
 - `gateway/requirements.txt`: Gateway の Python 実行依存関係をバージョン固定
 - `.env.example`: 環境変数のテンプレート
@@ -24,7 +24,7 @@ cp .env.example .env
 
 3. `.env` に `OPENROUTER_API_KEY` を設定します。Slack連携を使う場合は、Slack Appの設定画面で発行した `SLACK_BOT_TOKEN`、`SLACK_APP_TOKEN`、`SLACK_SIGNING_SECRET` を設定し、`SLACK_ALLOWED_USERS` に許可するSlackユーザーIDをカンマ区切りで設定します。実際のトークンやキーはこの配布ZIPやGitに入れないでください。
 4. Slack App側で必要なSocket Mode、Bot Token Scopes、Event Subscriptionsなどを有効にし、Hermes側のSlack設定にも同じAppの情報を登録します。利用するHermesのSlack連携機能が要求する設定を確認してください。
-5. ローカルLLMを使う場合は、ホスト上で `http://localhost:11234/v1/chat/completions` を提供していることを確認します。Hermes コンテナからは `host.docker.internal:11234` で接続します。
+5. ローカルLLMへ切り替える場合は、ホスト上で `http://localhost:11234/v1/chat/completions` を提供していることを確認し、`hermes/config/config.yaml` のコメントアウトされたローカルモデル設定を有効化します。Hermes コンテナからは `host.docker.internal:11234` で接続します。
 6. イメージをビルドして起動します。
 
 ```sh
@@ -76,14 +76,15 @@ docker compose down
 
 Hermes Agent は通常 `~/.hermes/config.yaml` を読み込みます。この構成では、ホストの `~/.hermes` をコンテナの `/opt/data` にマウントします。設定テンプレートは `hermes/Dockerfile` でイメージへコピーされ、コンテナ起動時に `/opt/data/config.yaml` へ配置されます。設定ファイルを個別にマウントしないため、設定ファイルのマウントによる `Device or resource busy` を避けられます。
 
-`hermes/config/config.yaml` の `base_url` は Docker コンテナから macOS ホスト上のローカル LLM に接続するため `http://host.docker.internal:11234/v1` としています。Hermes が `/chat/completions` を付加するため、実際のリクエスト先は `http://host.docker.internal:11234/v1/chat/completions` です。
+`hermes/config/config.yaml` では、OpenRouterを `model.provider` に指定し、`model.default` を `deepseek/deepseek-v4-flash-0731` に設定しています。ローカルモデルの `provider`、`default`、`base_url`、`api_mode` はコメントアウトで残してあり、必要な場合だけ有効化できます。ローカル設定を有効化した場合、`base_url` は Docker コンテナから macOS ホスト上のローカルLLMへ接続する `http://host.docker.internal:11234/v1` です。Hermes が `/chat/completions` を付加するため、実際のリクエスト先は `http://host.docker.internal:11234/v1/chat/completions` です。
 
 Hermes の OpenAI 互換 API はコンテナ内の 9119 番ポートで起動し、`internal-net` 上の Gateway から `http://hermes:9119` で到達できます。Hermes の 9119 番ポートはホストへ公開しません。Gateway は `9119:9119` でホストとLANへ公開され、Cloudflare Tunnelからも到達できます。直接アクセスにはGatewayトークンが必要です。
 
 ## 注意点
 
 - コンテナ内の `localhost` はコンテナ自身を指します。ローカル LLM が macOS ホスト上で動作している場合、Docker から到達できるホスト名に合わせて `base_url` を変更してください。Docker Desktop では通常 `host.docker.internal` が利用できます。
-- OpenRouter のフォールバックモデルは `openai/gpt-5.6-luna` に設定しています。必要に応じて `fallback_providers[].model` を変更してください。
+- デフォルトモデルは OpenRouter の `deepseek/deepseek-v4-flash-0731`、フォールバックモデルは `openai/gpt-5.6-luna` に設定しています。必要に応じて `model.default` または `fallback_providers[].model` を変更してください。
+- Hermes、Gateway、Cloudflare Tunnel のコンテナは `TZ=Asia/Tokyo` で起動するため、コンテナ内の時刻は日本時間（JST）です。
 - Dashboardは同一Hermesコンテナ内で `HERMES_DASHBOARD_INSECURE=1` を使う無認証構成です。ユーザー承認済みのためホストの `8642:8642` に公開しますが、信頼できるネットワークに限定してください。
 - `HERMES_DASHBOARD_PUBLIC_URL`はローカルURLの`http://localhost:8642`に固定しています。DashboardはCloudflare Tunnelで外部公開しません。Gatewayは認証付きでLANからも到達できます。
 
