@@ -51,6 +51,8 @@ services:
   # FastAPI Gateway (token validation)
   gateway:
     build: ./gateway
+    volumes:
+      - "${HOME}/.hermes/public:/opt/data/public:ro"
     ports:
       # Explicitly approved direct host/LAN access; clients must provide a Gateway token.
       - "9119:9119"

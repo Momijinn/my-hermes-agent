@@ -126,6 +126,14 @@ FastAPI Gateway は `Authorization: Bearer` トークンとリクエストの形
 2. Tunnel の token を発行し、`.env` の `CLOUDFLARE_TUNNEL_TOKEN` に設定します。`credentials.json`、Tunnel ID、hostname をリポジトリへ配置する必要はありません。
 3. `cloudflared` は `CLOUDFLARE_TUNNEL_TOKEN` で起動し、Tunnel の ingress は Cloudflare Dashboard で管理します。リポジトリ内の設定ファイルや credentials は不要です。
 
+### 公開ファイルの配信 (/public)
+
+`~/.hermes/public` ディレクトリにファイルを置くと、認証なしで `http://<host>:9119/public/<filename>` からアクセスできます。例えば、`logo.png` を置くと `http://localhost:9119/public/logo.png` でアクセスできます。
+
+ファイルサイズの上限は10MBです。directory traversal 対策済みのため、公開ディレクトリ外のファイルにはアクセスできません。
+
+`docker compose up -d --build hermes gateway cloudflared` を実行すると、`~/.hermes/public` は自動的にvolume mountされます。追加の設定は不要です。
+
 ### GitHub Secrets
 
 対象リポジトリの Settings > Secrets and variables > Actions に次を登録します。

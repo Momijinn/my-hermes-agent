@@ -3,13 +3,15 @@
 import hmac
 import json
 import logging
+import mimetypes
 import os
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, model_validator
 
 GATEWAY_TOKENS = {
@@ -22,6 +24,8 @@ HERMES_API_KEY = os.environ.get("HERMES_API_KEY", "")
 MAX_BODY_BYTES = int(os.environ.get("GATEWAY_MAX_BODY_BYTES", "1048576"))
 MAX_CONTEXT_LINES = int(os.environ.get("GATEWAY_MAX_CONTEXT_LINES", os.environ.get("MAX_CONTEXT_LINES", "2000")))
 MAX_CONTEXT_CHARS = int(os.environ.get("GATEWAY_MAX_CONTEXT_CHARS", os.environ.get("MAX_CONTEXT_CHARS", "200000")))
+PUBLIC_DIR = Path("/opt/data/public").resolve()
+MAX_PUBLIC_FILE_BYTES = 10 * 1024 * 1024
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("gateway")
@@ -227,3 +231,17 @@ async def chat_completions(
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/public/{path:path}")
+async def public_file(path: str):
+    """Serve a public file without gateway authentication."""
+    file_path = (PUBLIC_DIR / path).resolve()
+    if not file_path.is_relative_to(PUBLIC_DIR) or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    if file_path.stat().st_size > MAX_PUBLIC_FILE_BYTES:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    media_type, _ = mimetypes.guess_type(file_path.name)
+    return FileResponse(file_path, media_type=media_type or "application/octet-stream")

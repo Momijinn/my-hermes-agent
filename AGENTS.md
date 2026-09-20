@@ -3,6 +3,7 @@
 ## Setup and operation
 
 - Run commands from the repository root. Create runtime configuration with `cp .env.example .env`.
+- 公開ファイル用のディレクトリを作成します: `mkdir -p ~/.hermes/public`
 - Compose requires `.env` keys `HERMES_API_KEY` and `CLOUDFLARE_TUNNEL_TOKEN` at startup. `GATEWAY_TOKENS` is needed for authenticated Gateway use, and `OPENROUTER_API_KEY` is needed for the configured OpenRouter fallback. Slack integration additionally uses the three `SLACK_*` keys and optional `SLACK_ALLOWED_USERS`; keep all real secrets out of Git, logs, PRs, and generated artifacts.
 - If an old dashboard deployment may exist, clean it before starting the current layout, in this order:
 
@@ -22,6 +23,7 @@
 - `hermes/Dockerfile` pins `nousresearch/hermes-agent:v2026.6.5`, adds Node/npm, and seeds `hermes/config/config.yaml`. Compose copies that config into the persistent `/opt/data` volume before running `hermes gateway run`.
 - Hermes is internal-only on `internal-net`; its API listens on container port 9119 and is not published to the host. Local model traffic uses `http://host.docker.internal:11234/v1`; the configured fallback is OpenRouter `openai/gpt-5.6-luna`.
 - `gateway/main.py` is the FastAPI entrypoint, run by the gateway image as `uvicorn main:app --host 0.0.0.0 --port 9119`. It authenticates `Bearer` tokens, enforces context limits, and forwards `POST /v1/chat/completions` to Hermes without rewriting the payload. `GET /health` is unauthenticated.
+- `GET /public/{path}` は `/opt/data/public` 上のファイルを認証なしで配信します。ファイルサイズ上限は10MBです。エージェントは公開ファイルを作成・更新する場合、`/opt/data/public/` に配置してください。
 - `cloudflared` uses the Dashboard-managed, token-authenticated Cloudflare Tunnel to reach `http://gateway:9119`; Gateway port 9119 is also explicitly published for trusted host/LAN access and requires Gateway authentication. Streaming requests (`stream=true`) are intentionally rejected with HTTP 400.
 - The dashboard runs inside Hermes with `HERMES_DASHBOARD_INSECURE=1` and is intentionally unauthenticated. The user explicitly approved direct host/LAN access, so Compose maps it as `8642:8642`; use only on a trusted network and never expose it through Cloudflare or another proxy.
 - Only assign required hostnames/routes to the Cloudflare Tunnel, review Gateway and Cloudflare logs, and before internet exposure use strong tokens and consider Cloudflare Access, IP restrictions, and rate limits.
