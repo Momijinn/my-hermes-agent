@@ -17,6 +17,7 @@ services:
     env_file:
       - .env
     environment:
+      TZ: Asia/Tokyo
       # Run the supported dashboard alongside the gateway in this container.
       HERMES_DASHBOARD: "1"
       HERMES_DASHBOARD_HOST: "0.0.0.0"
@@ -54,6 +55,7 @@ services:
       # Explicitly approved direct host/LAN access; clients must provide a Gateway token.
       - "9119:9119"
     environment:
+      - TZ=Asia/Tokyo
       - GATEWAY_TOKENS=${GATEWAY_TOKENS}
       - HERMES_URL=http://hermes:9119
       - HERMES_API_KEY=${HERMES_API_KEY:?HERMES_API_KEY must be set}
@@ -86,6 +88,7 @@ services:
       - --no-autoupdate
       - run
     environment:
+      TZ: Asia/Tokyo
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN must be set}
     networks:
       - public-net

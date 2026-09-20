@@ -3,14 +3,17 @@
 # which is ~/.hermes/config.yaml inside the container.
 
 model:
+  provider: openrouter
+  default: deepseek/deepseek-v4-flash-0731
+  # Local model settings are retained for local-only deployments.
   # Hermes expects the provider base URL; it appends /chat/completions.
   # Effective local endpoint: http://host.docker.internal:11234/v1/chat/completions
-  provider: custom
-  default: mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit
-  base_url: http://host.docker.internal:11234/v1
-  api_mode: chat_completions
+  # provider: custom
+  # default: mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit
+  # base_url: http://host.docker.internal:11234/v1
+  # api_mode: chat_completions
   # The local server does not require authentication.
-  api_key: "no-api-key"
+  # api_key: "no-api-key"
 
 # Used when the local model is unavailable or returns an error.
 # Hermes reads OPENROUTER_API_KEY from the environment for this provider.
