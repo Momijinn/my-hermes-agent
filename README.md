@@ -4,7 +4,7 @@ Hermes Agent v2026.6.5 を Docker Compose で起動するための最小構成�
 
 ## 構成
 
-- `hermes/Dockerfile`: `nousresearch/hermes-agent:2026.6.5` を固定して Node.js/npm を追加
+- `hermes/Dockerfile`: `nousresearch/hermes-agent:2026.6.5` を固定して Node.js/npm と RTK `v0.49.0` を checksum 検証付きで追加
 - `docker-compose.yml`: Hermes OpenAI互換APIとDashboardを同じHermesコンテナで有効化し、Gateway、Cloudflare Tunnel、永続データ、環境変数を設定
 - `hermes/config/config.yaml`: OpenRouterのデフォルトモデルとフォールバック、およびコメントアウトしたローカルモデル設定の初期テンプレート
 - `gateway/Dockerfile`: Python 3.12 slim-bookworm を digest 固定して Gateway をビルド
@@ -12,6 +12,19 @@ Hermes Agent v2026.6.5 を Docker Compose で起動するための最小構成�
 - `.env.example`: 環境変数のテンプレート
 - `.env`: 実行時の環境変数。Git 管理対象外
 - `~/.hermes`: コンテナ外に永続化する Hermes の状態、メモリ、ログなど
+
+## RTK (Rust Token Killer)
+
+RTK は Gateway ではなく Hermes イメージ内の `/usr/local/bin/rtk` に導入します。公式 GitHub Release の `v0.49.0` を使用し、Docker の amd64 では公式 `x86_64-unknown-linux-musl`、arm64 では公式 `aarch64-unknown-linux-gnu` アーカイブを SHA-256 固定値で検証してから展開します。
+
+```sh
+docker compose build hermes
+docker compose run --rm --no-deps hermes rtk --version
+```
+
+Hermes 起動時に公式の `rtk init --agent hermes` を `/opt/data` 上で実行し、`~/.hermes/plugins/rtk-rewrite/` の `__init__.py` と `plugin.yaml` を配置して有効化します。初期化済みマーカーとこの2ファイルの存在・非空を確認するため、両方を満たす場合だけ初期化済みと判定し、欠落・不完全な場合は再試行します。既存の `config.yaml` は初回だけイメージのテンプレートからコピーするため、RTK の設定変更やプラグイン有効化を再起動で上書きしません。
+
+RTK の telemetry は `RTK_TELEMETRY_DISABLED=1` で無効化します。履歴 DB は共有 volume 内の `/opt/data/rtk/history.db` に固定し、コンテナ再作成後も維持します。プラグイン初期化や RTK が失敗しても警告後に Hermes を起動する fail-open 設計で、コマンドは元のまま実行されます。
 
 ## 別PCでのセットアップと起動
 

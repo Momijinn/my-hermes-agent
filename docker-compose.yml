@@ -9,11 +9,7 @@ services:
     container_name: hermes
     restart: unless-stopped
     command:
-      - sh
-      - -c
-      - >-
-        cp /usr/local/share/hermes/config.yaml /opt/data/config.yaml;
-        exec hermes gateway run
+      - /usr/local/bin/hermes-entrypoint
     env_file:
       - .env
     environment:
